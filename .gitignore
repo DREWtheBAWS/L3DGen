@@ -1,0 +1,34 @@
+# Mixamo animation files.
+#
+# Adobe's Mixamo licence lets you use their clips in your own projects, but not
+# redistribute the asset files themselves. Drop your own .fbx downloads in
+# animations/ and the panel will list them; they stay out of the repository.
+animations/*.fbx
+animations/*.FBX
+
+# Reference art and generated models: yours, often large, and nothing here needs
+# them to run.
+*.glb
+*.fbx
+*.blend
+*.blend1
+uploads/
+output/
+
+# Model weights are gigabytes and come from their own sources. See the README.
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+
+node_modules/
+__pycache__/
+*.pyc
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+.vscode/
+.idea/

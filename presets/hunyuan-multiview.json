@@ -1,0 +1,6 @@
+{"images":{"front":"test_front.png","left":"test_left.png","back":"test_back.png","right":"test_right.png"},
+ "geometry":"hy3d_mv","seed":42,"removeBackground":true,
+ "targetTriangles":8000,"remesh":true,
+ "texture":true,"textureResolution":2048,"bakeResolution":1024,
+ "bakeNormal":true,"bakeAO":false,
+ "filenamePrefix":"3d/final-hy3dmv"}

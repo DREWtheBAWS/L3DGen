@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Image to 3D</title>
+<link rel="stylesheet" href="/style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+
+<header>
+  <h1>Image <span class="arrow">&rarr;</span> 3D</h1>
+  <nav class="tabs">
+    <button type="button" class="tab is-active" data-tab="pipeline">Pipeline</button>
+    <button type="button" class="tab" data-tab="lab">Image lab</button>
+  </nav>
+  <div id="preflight" class="preflight">checking models&hellip;</div>
+</header>
+
+<main id="tab-pipeline">
+  <!-- ------------------------------------------------ controls ---------- -->
+  <section class="panel controls">
+
+    <h2>Model</h2>
+    <div class="field">
+      <label for="modelName">Name</label>
+      <input type="text" id="modelName" placeholder="pipeline" maxlength="48"
+             autocomplete="off" spellcheck="false">
+      <p class="hint">Names every file this run writes:
+        <code id="namePreview">3d/pipeline_00001_.glb</code></p>
+    </div>
+
+    <h2>Reference views</h2>
+    <p class="hint">Front is required. Left / back / right refine the silhouette when the
+      multiview model is selected.</p>
+    <div class="views">
+      <label class="slot" data-view="front"><input type="file" accept="image/*" hidden>
+        <div class="thumb"></div><button type="button" class="slot-clear" title="Remove this image">&times;</button><span>front <b>*</b></span></label>
+      <label class="slot" data-view="left"><input type="file" accept="image/*" hidden>
+        <div class="thumb"></div><button type="button" class="slot-clear" title="Remove this image">&times;</button><span>left</span></label>
+      <label class="slot" data-view="back"><input type="file" accept="image/*" hidden>
+        <div class="thumb"></div><button type="button" class="slot-clear" title="Remove this image">&times;</button><span>back</span></label>
+      <label class="slot" data-view="right"><input type="file" accept="image/*" hidden>
+        <div class="thumb"></div><button type="button" class="slot-clear" title="Remove this image">&times;</button><span>right</span></label>
+    </div>
+
+    <label class="check"><input type="checkbox" id="fitAngles">
+      My art is at odd angles <em>(isometric, 3/4 view)</em></label>
+    <p class="hint" id="fitNote">
+      Off by default: slots are treated as a level front/left/back/right turnaround.
+      Turn on and each image's camera angle is recovered from the model's
+      silhouette instead, then a full turnaround is generated from it.</p>
+    <div id="fitOpts">
+      <div class="field row">
+        <label for="fitPitchMin">Elevation search</label>
+        <input type="number" id="fitPitchMin" value="-20" min="-89" max="0" step="5">
+        <span class="hint" style="margin:0">to</span>
+        <input type="number" id="fitPitchMax" value="60" min="0" max="89" step="5">
+        <span class="hint" style="margin:0">deg</span>
+      </div>
+      <div class="field slider">
+        <label for="fitYawRange">Rotation search <output id="fitYawRangeOut">&plusmn;30&deg;</output></label>
+        <input type="range" id="fitYawRange" min="5" max="180" step="5" value="30">
+        <div class="ticks"><span>trust the front</span><span>search all round</span></div>
+      </div>
+      <p class="hint">Keep the rotation search narrow. The shape model places your
+        image at the front, and a rounded subject looks near-identical from every
+        angle &mdash; measured on a low-poly creature the match varied by only 0.001
+        between opposite sides, so a wide search picks a side at random. Isometric
+        art usually sits 20&ndash;45&deg; above the horizon.</p>
+    </div>
+
+    <h2>Geometry</h2>
+    <div class="field">
+      <label for="geometry">Model</label>
+      <select id="geometry">
+        <option value="hy3d_mv">Hunyuan3D 2.0 multiview &mdash; uses all 4 views</option>
+        <option value="hy3d_21">Hunyuan3D 2.1 &mdash; front view only, finest detail</option>
+        <option value="trellis2">TRELLIS.2 &mdash; front view, native colour</option>
+      </select>
+    </div>
+    <p class="hint" id="geometryNote"></p>
+
+    <!-- ---------------------------------------------- poly budget ------- -->
+    <h2>Polygon budget</h2>
+    <div class="field slider">
+      <label for="tris">Target triangles <output id="trisOut">20 000</output></label>
+      <input type="range" id="tris" min="5000" max="50000" step="1000" value="20000">
+      <div class="ticks"><span>5k</span><span>20k</span><span>35k</span><span>50k</span></div>
+    </div>
+    <div class="field row">
+      <label class="check"><input type="checkbox" id="unlockTris"> allow beyond 50k</label>
+      <input type="number" id="trisExact" min="100" max="2000000" step="500" value="20000" disabled>
+    </div>
+    <div class="field">
+      <label for="placement">Decimation</label>
+      <select id="placement">
+        <option value="midpoint">midpoint &mdash; faithful to the source surface</option>
+        <option value="qem">QEM &mdash; optimal placement, crisper edges</option>
+      </select>
+    </div>
+    <label class="check"><input type="checkbox" id="remesh">
+      Remesh before decimating <em>(TRELLIS.2 only)</em></label>
+    <div class="field slider sub">
+      <label for="remeshRes">Remesh resolution <output id="remeshResOut">512</output></label>
+      <input type="range" id="remeshRes" min="128" max="1024" step="64" value="512">
+    </div>
+    <div class="field slider">
+      <label for="crease">Shading crease angle <output id="creaseOut">60&deg;</output></label>
+      <input type="range" id="crease" min="0" max="180" step="5" value="60">
+    </div>
+
+    <!-- ------------------------------------------------- texture -------- -->
+    <h2>Texture</h2>
+    <label class="check"><input type="checkbox" id="texture" checked>
+      Generate colour texture</label>
+    <p class="hint" id="textureNote"></p>
+    <div id="textureOpts">
+      <div class="field">
+        <label for="texRes">Atlas resolution</label>
+        <select id="texRes">
+          <option>1024</option><option selected>2048</option><option>4096</option>
+        </select>
+      </div>
+
+      <!-- projection-only controls -->
+      <div id="projOpts">
+        <div class="field slider">
+          <label for="facing">View blend sharpness <output id="facingOut">3.0</output></label>
+          <input type="range" id="facing" min="0.5" max="10" step="0.5" value="3">
+          <div class="ticks"><span>soft blend</span><span>crisp art</span></div>
+        </div>
+        <div class="field slider">
+          <label for="maskErode">Shrink cutout edge <output id="maskErodeOut">6 px</output></label>
+          <input type="range" id="maskErode" min="0" max="24" step="1" value="6">
+          <div class="ticks"><span>0</span><span>keeps background off the model</span><span>24</span></div>
+        </div>
+        <div class="field slider">
+          <label for="minFacing">Reject grazing samples <output id="minFacingOut">0.20</output></label>
+          <input type="range" id="minFacing" min="0" max="0.6" step="0.01" value="0.2">
+          <div class="ticks"><span>keep all</span><span>strict</span></div>
+        </div>
+        <div class="field">
+          <label for="fillMode">Fill areas no view reaches</label>
+          <select id="fillMode">
+            <option value="surface" selected>Blend across the surface</option>
+            <option value="surface+mirror">Blend + mirror the opposite side</option>
+            <option value="nearest">Nearest texel (hard)</option>
+            <option value="none">Leave black</option>
+          </select>
+        </div>
+        <div class="field slider">
+          <label for="paletteColors">Correct fill to source palette <output id="paletteColorsOut">off</output></label>
+          <input type="range" id="paletteColors" min="0" max="32" step="1" value="0">
+          <div class="ticks"><span>off</span><span>32 colours</span></div>
+        </div>
+        <div class="field slider" id="paletteOpts" hidden>
+          <label for="paletteStrength">Correction strength <output id="paletteStrengthOut">0.70</output></label>
+          <input type="range" id="paletteStrength" min="0" max="1" step="0.05" value="0.7">
+        </div>
+        <label class="check" id="paletteShadeRow" hidden>
+          <input type="checkbox" id="paletteKeepShading" checked>
+          Keep shading &amp; surface detail <em>(uncheck for flat cel-shading)</em></label>
+        <p class="hint">Blending unreached areas makes gradients, and the midpoint of two
+          of your colours is a hue that is in none of your reference images. This pulls
+          those areas back onto colours your art actually uses, then re-lights each one
+          to the texel's own brightness &mdash; so shading and detail survive and only the
+          wrong hue goes. Try 8&ndash;16 colours. Areas your art reaches are never altered.</p>
+        <p class="hint" id="coverageNote"></p>
+        <label class="check"><input type="checkbox" id="symmetric">
+          Subject is symmetric <em>(mirrors a side view onto the missing side)</em></label>
+        <p class="hint" id="symmetricNote"></p>
+        <label class="check"><input type="checkbox" id="swapSides">
+          Swap left / right <em>(if your side art lands on the wrong side)</em></label>
+        <label class="check"><input type="checkbox" id="projOcc" checked>
+          Occlusion test <em>(stops art leaking onto hidden surfaces)</em></label>
+        <label class="check"><input type="checkbox" id="saveCoverage" checked>
+          Save coverage map <em>(shows which areas no view could reach)</em></label>
+        <div class="field slider">
+          <label for="viewScale">Art fit scale <output id="viewScaleOut">1.00</output></label>
+          <input type="range" id="viewScale" min="0.8" max="1.25" step="0.005" value="1">
+        </div>
+        <div class="field slider">
+          <label for="viewPitch">View elevation <output id="viewPitchOut">0&deg;</output></label>
+          <input type="range" id="viewPitch" min="-45" max="45" step="1" value="0">
+        </div>
+      </div>
+
+      <!-- TRELLIS-only control -->
+      <label class="check" id="useRefRow"><input type="checkbox" id="useRef" checked>
+        Back-project through dense mesh <em>(avoids faceted bakes at low poly)</em></label>
+    </div>
+    <label class="check"><input type="checkbox" id="bakeNormal" checked>
+      Bake normal map from the dense mesh</label>
+    <label class="check"><input type="checkbox" id="bakeAO">
+      Bake ambient occlusion <em>(slow)</em></label>
+
+    <!-- ------------------------------------------ view synthesis -------- -->
+    <h2>Missing views</h2>
+    <div class="field">
+      <label for="missingViews">Strategy</label>
+      <select id="missingViews">
+        <option value="none">Don't generate &mdash; approximate gaps from my art</option>
+        <option value="before">Before 3D &mdash; invent a turnaround to condition the shape (approximate)</option>
+        <option value="after" selected>After 3D &mdash; render each gap angle and repaint it (exact)</option>
+        <option value="both">Both</option>
+      </select>
+    </div>
+    <p class="hint" id="strategyNote"></p>
+    <div id="genRefOpts">
+      <div class="field">
+        <label for="refViewStyle">Style clause appended to each camera instruction</label>
+        <textarea id="refViewStyle" rows="2">Same subject, same colours, same low poly art style, full body, centred, plain background.</textarea>
+      </div>
+    </div>
+    <p class="hint" id="synthNote"></p>
+    <div id="synthOpts">
+      <div class="field">
+        <label for="synthBackend">Generator</label>
+        <select id="synthBackend">
+          <option value="kontext">Flux Kontext &mdash; uses your source art as a style reference</option>
+          <option value="sdxl">SDXL img2img &mdash; faster, prompt-only style</option>
+        </select>
+      </div>
+      <p class="hint" id="backendNote"></p>
+      <div class="field" id="sdxlModelRow">
+        <label for="imageModel">Checkpoint</label>
+        <select id="imageModel"></select>
+      </div>
+      <div id="cnRow" hidden>
+        <div class="field">
+          <label for="controlNet">Lock to geometry (ControlNet)</label>
+          <select id="controlNet">
+            <option value="">Off &mdash; recolour the render only</option>
+          </select>
+        </div>
+        <div id="cnOpts" hidden>
+          <div class="field">
+            <label for="controlNetType">Conditioned on</label>
+            <select id="controlNetType">
+              <option value="depth" selected>Depth &mdash; overall form</option>
+              <option value="normal">Normals &mdash; surface relief, finer</option>
+            </select>
+          </div>
+          <div class="field slider">
+            <label for="controlNetStrength">Lock strength <output id="controlNetStrengthOut">0.85</output></label>
+            <input type="range" id="controlNetStrength" min="0.2" max="1.5" step="0.05" value="0.85">
+          </div>
+          <div class="field slider">
+            <label for="controlNetDenoise">Invention <output id="controlNetDenoiseOut">0.85</output></label>
+            <input type="range" id="controlNetDenoise" min="0.3" max="1" step="0.05" value="0.85">
+            <div class="ticks"><span>recolour</span><span>paint new detail</span></div>
+          </div>
+          <p class="hint">This is what paints geometry your reference art never showed
+            &mdash; a satchel or strap the shape model invented on a side you did not draw.
+            The depth and normal maps come from the same orthographic camera the bake
+            reprojects through, so the generated detail lands on the mesh exactly.
+            Without the lock there is no good denoise setting: low only re-tints,
+            high drifts off the silhouette.</p>
+        </div>
+      </div>
+      <div class="field slider" id="kontextGuidanceRow">
+        <label for="kontextGuidance">Instruction strength <output id="kontextGuidanceOut">2.5</output></label>
+        <input type="range" id="kontextGuidance" min="1" max="6" step="0.1" value="2.5">
+        <div class="ticks"><span>follow the art</span><span>follow the prompt</span></div>
+      </div>
+      <div class="field">
+        <label for="synthPrompt">Prompt</label>
+        <textarea id="synthPrompt" rows="3">Keep the exact art style, palette and proportions of the reference. Stylized low poly game character, clean flat colour, soft cel shading, neutral lighting. Show the same subject from the {view}.</textarea>
+        <p class="hint"><code>{view}</code> is replaced per angle (front, back, left side,
+          right side). Leave it out and it gets appended automatically.</p>
+      </div>
+      <div class="field">
+        <label for="synthNegative">Negative</label>
+        <textarea id="synthNegative" rows="2">photorealistic, noisy, grainy, text, watermark, harsh shadows, busy detail</textarea>
+      </div>
+      <div class="field slider">
+        <label for="synthDenoise">Freedom <output id="synthDenoiseOut">1.00</output></label>
+        <input type="range" id="synthDenoise" min="0.1" max="1" step="0.05" value="1">
+        <div class="ticks"><span>stay close to the render</span><span>rebuild</span></div>
+      </div>
+      <p class="hint">With Kontext leave this at <b>1.00</b> &mdash; it rebuilds from
+        the reference latents, and lower values just hand back the render almost
+        unchanged. Only lower it on the SDXL backend.</p>
+      <label class="check"><input type="checkbox" id="synthGapsOnly" checked>
+        Only repaint the gaps <em>(keeps your real art bit-exact)</em></label>
+      <label class="check"><input type="checkbox" id="refineGeometry">
+        Also rebuild the shape from the generated views <em>(experimental)</em></label>
+      <details>
+        <summary class="hint">More</summary>
+        <div class="field slider">
+          <label for="synthSteps">Steps <output id="synthStepsOut">25</output></label>
+          <input type="range" id="synthSteps" min="8" max="50" step="1" value="25">
+        </div>
+        <div class="field slider">
+          <label for="synthCfg">CFG <output id="synthCfgOut">6.0</output></label>
+          <input type="range" id="synthCfg" min="1" max="12" step="0.5" value="6">
+        </div>
+        <div class="field slider">
+          <label for="gapGrow">Blend margin <output id="gapGrowOut">6 px</output></label>
+          <input type="range" id="gapGrow" min="0" max="64" step="2" value="6">
+        </div>
+        <div class="field slider">
+          <label for="synthWeight">Synthetic view weight <output id="synthWeightOut">0.60</output></label>
+          <input type="range" id="synthWeight" min="0.05" max="1.5" step="0.05" value="0.6">
+        </div>
+      </details>
+    </div>
+
+    <!-- ------------------------------------------------ rigging -------- -->
+    <h2>Rigging</h2>
+    <label class="check"><input type="checkbox" id="autoRig">
+      Auto-rig as a Mixamo humanoid <em>(writes a second, skinned GLB)</em></label>
+    <div id="rigOpts" hidden>
+      <div class="field">
+        <label for="rigFacing">Character faces</label>
+        <select id="rigFacing">
+          <option value="+Z">+Z &mdash; toward the front view (default)</option>
+          <option value="-Z">&minus;Z &mdash; away from the front view</option>
+        </select>
+      </div>
+      <div class="field slider">
+        <label for="rigSmoothing">Weight softness <output id="rigSmoothingOut">48</output></label>
+        <input type="range" id="rigSmoothing" min="0" max="150" step="2" value="48">
+      </div>
+      <label class="check"><input type="checkbox" id="rigSymmetrize" checked>
+        Force a symmetric skeleton</label>
+      <div class="field slider">
+        <label for="rigMinConf">Refuse below confidence <output id="rigMinConfOut">0.00</output></label>
+        <input type="range" id="rigMinConf" min="0" max="1" step="0.05" value="0">
+      </div>
+      <p class="hint">Fits the 25-joint <code>mixamorig:*</code> hierarchy to the finished
+        mesh by finding its extremities along the surface, so it works from any
+        A- or T-pose. Needs a roughly humanoid shape &mdash; two arms, two legs, a head.
+        Apply Mixamo clips through a retargeter (Unity Humanoid, Blender, Godot):
+        the rest pose here is your mesh, not Mixamo's. Check
+        <code>step7-rig-skeleton</code> in the steps gallery before you rely on it.</p>
+    </div>
+
+    <!-- ------------------------------------------------ advanced -------- -->
+    <details class="advanced">
+      <summary>Advanced</summary>
+      <label class="check"><input type="checkbox" id="rembg" checked>
+        Remove background &amp; re-frame subject</label>
+      <div class="field slider">
+        <label for="steps">Shape steps <output id="stepsOut">20</output></label>
+        <input type="range" id="steps" min="8" max="60" step="1" value="20">
+      </div>
+      <div class="field slider">
+        <label for="cfg">CFG <output id="cfgOut">7.5</output></label>
+        <input type="range" id="cfg" min="1" max="12" step="0.5" value="7.5">
+      </div>
+      <div class="field slider">
+        <label for="octree">Octree resolution <output id="octreeOut">256</output></label>
+        <input type="range" id="octree" min="128" max="512" step="32" value="256">
+      </div>
+      <div class="field slider">
+        <label for="latentRes">Latent tokens <output id="latentResOut">3072</output></label>
+        <input type="range" id="latentRes" min="1024" max="8192" step="256" value="3072">
+      </div>
+      <div class="field row">
+        <label for="seed">Seed</label>
+        <input type="number" id="seed" value="-1" step="1">
+        <button type="button" id="randomSeed" class="mini">random</button>
+      </div>
+      <p class="hint">Seed <code>-1</code> randomises every run.</p>
+    </details>
+
+    <label class="check"><input type="checkbox" id="lowVram">
+      Low VRAM mode <em>(for 10GB cards)</em></label>
+    <p class="hint" id="lowVramNote"></p>
+
+    <div class="actions">
+      <button id="run" class="primary">Generate</button>
+      <button id="cancel" class="ghost" disabled>Cancel</button>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------- output ---------- -->
+  <section class="panel output">
+    <div id="viewport">
+      <div id="viewportEmpty">The finished model appears here.</div>
+      <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="viewer-bar">
+      <label class="check"><input type="checkbox" id="wire"> wireframe</label>
+      <label class="check"><input type="checkbox" id="spin" checked> auto-rotate</label>
+      <span class="spacer"></span>
+      <span id="meshStats" class="stats"></span>
+      <a id="download" class="mini" download hidden>Download .glb</a>
+      <button type="button" id="downloadFbx" class="mini" hidden>Download .fbx</button>
+      <button type="button" id="downloadZip" class="mini" hidden>Download .zip (Unity)</button>
+    </div>
+
+    <!-- Playback controls, shown only when the loaded GLB carries clips. -->
+    <div class="viewer-bar" id="animBar" hidden>
+      <button type="button" id="animPlay" class="mini">pause</button>
+      <select id="animClip" class="mini"></select>
+      <input type="range" id="animScrub" min="0" max="1000" value="0" step="1" class="scrub">
+    </div>
+
+    <!-- Hybrid rigging: rig on Mixamo, bring the textures back here. -->
+    <div class="viewer-bar" id="mixamoPanel" hidden>
+      <button type="button" id="mixamoExport" class="mini" disabled>1 · Export .fbx</button>
+      <button type="button" id="mixamoOpen" class="mini">2 · Open Mixamo</button>
+      <button type="button" id="mixamoApply" class="mini" disabled>3 · Load rigged .fbx</button>
+      <input type="file" id="mixamoFile" accept=".fbx" hidden>
+      <span class="spacer"></span>
+      <span id="mixamoNote" class="stats"></span>
+    </div>
+    <p class="hint" id="mixamoHint" hidden>Mixamo's auto-rigger beats the built-in one on
+      humanoids, but strips the material. Export the mesh, rig it at
+      mixamo.com, then load the rigged .fbx back here and the atlas is
+      reattached &mdash; Mixamo preserves the UV layout, so that is exact rather
+      than a re-bake. Download <b>with skin, FBX, no animation</b>.</p>
+
+    <!-- Apply a Mixamo clip to the rigged output. -->
+    <div class="viewer-bar" id="animPanel" hidden>
+      <label for="animSource">Mixamo clip</label>
+      <select id="animSource" class="mini"></select>
+      <button type="button" id="animApply" class="mini" disabled>Apply to rig</button>
+      <span class="spacer"></span>
+      <span id="animNote" class="stats"></span>
+    </div>
+
+    <div class="progress">
+      <div class="bar"><div id="barFill"></div></div>
+      <div id="stage" class="stage">idle</div>
+    </div>
+
+    <div id="stepGallery" class="steps" hidden>
+      <h3>Pipeline steps</h3>
+      <p class="hint">Every stage this run produced, in order. Click one to open it
+        full size; then use &larr; &rarr; to step through and Esc to close.</p>
+      <div id="stepGrid" class="step-grid"></div>
+    </div>
+
+    <pre id="log" class="log"></pre>
+  </section>
+</main>
+
+<main id="tab-lab" hidden>
+  <section class="panel controls">
+    <h2>Source</h2>
+    <p class="hint">Runs the generator on its own &mdash; no shape model, no
+      projection, no bake. Seconds instead of half an hour, so you can tell
+      whether a bad result came from the image model or from the 3D side.</p>
+    <div class="views lab-views">
+      <label class="slot" data-lab="front"><input type="file" accept="image/*" hidden>
+        <div class="thumb"></div><span>source <b>*</b></span></label>
+      <label class="slot" data-lab="back"><input type="file" accept="image/*" hidden>
+        <div class="thumb"></div><span>2nd reference</span></label>
+    </div>
+    <p class="hint">The second image is an extra style reference, used only by
+      Kontext. Leave it empty to test a single-reference edit.</p>
+    <div class="field">
+      <label for="labFromRun">Load a render from the last pipeline run</label>
+      <select id="labFromRun"><option value="">&mdash; pick a stage image &mdash;</option></select>
+    </div>
+    <p class="hint">This is the correct way to test the generator: a
+      <code>render</code> is already the target viewpoint, so the model only has
+      to restyle it. Pick one as the source, put your art in the second slot, and
+      you are running exactly what the pipeline runs.</p>
+
+    <p class="hint"><b>What this does and does not test.</b> In the pipeline the
+      generator is handed an <em>orthographic render already at the target
+      angle</em> and only has to restyle it. Kontext is an image editor, not a
+      novel-view synthesiser &mdash; give it your source art and ask for a side
+      view and it will mostly hand the art back. To reproduce the pipeline here,
+      use a <code>step3-render-*</code> image as the source and your art as the
+      second reference.</p>
+
+    <h2>Generator</h2>
+    <div class="field">
+      <label for="labBackend">Backend</label>
+      <select id="labBackend">
+        <option value="kontext">Flux Kontext &mdash; reference-conditioned edit</option>
+        <option value="sdxl">SDXL img2img</option>
+      </select>
+    </div>
+    <div class="field" id="labModelRow">
+      <label for="labModel">Checkpoint</label>
+      <select id="labModel"></select>
+      <p class="hint" id="labModelNote" style="display:none"></p>
+      <button type="button" id="labApplyTurbo" class="mini">use turbo settings</button>
+    </div>
+    <div class="field">
+      <label for="labPrompt">Prompt</label>
+      <textarea id="labPrompt" rows="3">Keep the exact art style, palette and proportions of the reference. Show the same subject from the left side.</textarea>
+    </div>
+    <div class="field" id="labNegRow">
+      <label for="labNegative">Negative</label>
+      <textarea id="labNegative" rows="2">photorealistic, noisy, grainy, text, watermark, blurry</textarea>
+    </div>
+
+    <div class="field slider">
+      <label for="labDenoise">Denoise <output id="labDenoiseOut">1.00</output></label>
+      <input type="range" id="labDenoise" min="0.05" max="1" step="0.05" value="1">
+      <div class="ticks"><span>barely change it</span><span>regenerate</span></div>
+    </div>
+    <p class="hint" id="labDenoiseNote"></p>
+
+    <div class="field slider" id="labGuidanceRow">
+      <label for="labGuidance">Instruction strength <output id="labGuidanceOut">2.5</output></label>
+      <input type="range" id="labGuidance" min="1" max="6" step="0.1" value="2.5">
+    </div>
+    <div class="field slider" id="labCfgRow">
+      <label for="labCfg">CFG <output id="labCfgOut">6.0</output></label>
+      <input type="range" id="labCfg" min="1" max="12" step="0.5" value="6">
+    </div>
+    <div class="field slider">
+      <label for="labSteps">Steps <output id="labStepsOut">25</output></label>
+      <input type="range" id="labSteps" min="4" max="50" step="1" value="25">
+    </div>
+    <div class="field row">
+      <label for="labSeed">Seed</label>
+      <input type="number" id="labSeed" value="-1" step="1">
+      <button type="button" id="labRandomSeed" class="mini">random</button>
+    </div>
+
+    <div class="actions">
+      <button id="labRun" class="primary">Generate image</button>
+      <button id="labCancel" class="ghost" disabled>Cancel</button>
+    </div>
+  </section>
+
+  <section class="panel output">
+    <div class="lab-compare">
+      <figure><img id="labSrcImg" alt=""><figcaption>source</figcaption></figure>
+      <figure><img id="labOutImg" alt=""><figcaption>result</figcaption></figure>
+    </div>
+    <div class="progress">
+      <div class="bar"><div id="labBarFill"></div></div>
+      <div id="labStage" class="stage">idle</div>
+    </div>
+    <pre id="labLog" class="log"></pre>
+  </section>
+</main>
+
+<div id="lightbox" class="lightbox" hidden>
+  <img id="lbImage" alt="">
+  <div class="lb-bar">
+    <button type="button" id="lbPrev" title="Previous (&larr;)">&larr;</button>
+    <span id="lbLabel"></span>
+    <button type="button" id="lbNext" title="Next (&rarr;)">&rarr;</button>
+    <button type="button" id="lbPixel" title="Toggle smoothing">pixelate</button>
+    <a id="lbOpen" class="mini" target="_blank" rel="noopener">open original</a>
+    <button type="button" id="lbClose" title="Close (Esc)">close</button>
+  </div>
+  <div class="lb-name" id="lbName"></div>
+  <div class="lb-hint">click the backdrop to close</div>
+</div>
+
+<script type="module" src="/app.js"></script>
+<script type="module" src="/lab.js"></script>
+</body>
+</html>

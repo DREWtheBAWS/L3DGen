@@ -1,0 +1,18 @@
+# Normalise line endings in the repository, check out native.
+# Without this, editing on Windows rewrites whole files as CRLF and every diff
+# looks like a full-file change.
+* text=auto
+
+*.js    text eol=lf
+*.json  text eol=lf
+*.py    text eol=lf
+*.sh    text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.md    text eol=lf
+*.yaml  text eol=lf
+
+*.png   binary
+*.jpg   binary
+*.glb   binary
+*.fbx   binary

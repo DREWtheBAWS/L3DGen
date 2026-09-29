@@ -1,0 +1,6 @@
+{"images":{"front":"test_front.png"},
+ "geometry":"trellis2","seed":7,"removeBackground":true,
+ "targetTriangles":25000,"remesh":true,"remeshResolution":512,
+ "texture":true,"textureResolution":2048,"bakeResolution":1024,
+ "bakeNormal":true,"bakeAO":true,"aoSamples":64,"useReferenceMesh":true,
+ "filenamePrefix":"3d/final-trellis"}
